@@ -1,12 +1,11 @@
 import { NavLink } from "react-router-dom";
-import { BarChart3, List, Settings, Radio } from "lucide-react";
+import { BarChart3, List, Radio } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCompanyName } from "@/hooks/use-company-name";
 
 const navItems = [
   { to: "/", label: "Dashboard", icon: BarChart3 },
   { to: "/mentions", label: "Mentions", icon: List },
-  { to: "/settings", label: "Settings", icon: Settings },
 ];
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
