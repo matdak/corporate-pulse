@@ -16,7 +16,7 @@ export default function Mentions() {
   const [subredditFilter, setSubredditFilter] = useState<string>("all");
   const [search, setSearch] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const { startDate, setStartDate, endDate, setEndDate, filterByDate } = useDateFilter();
+  const { preset, setPreset, customStart, setCustomStart, customEnd, setCustomEnd, filterByDate } = useDateFilter();
 
   const filtered = useMemo(() => {
     const dateFiltered = filterByDate(mentions);
@@ -67,10 +67,12 @@ export default function Mentions() {
             </SelectContent>
           </Select>
           <DateRangeFilter
-            startDate={startDate}
-            endDate={endDate}
-            onStartChange={setStartDate}
-            onEndChange={setEndDate}
+            preset={preset}
+            onPresetChange={setPreset}
+            customStart={customStart}
+            customEnd={customEnd}
+            onCustomStartChange={setCustomStart}
+            onCustomEndChange={setCustomEnd}
           />
         </div>
 

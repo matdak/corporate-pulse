@@ -21,7 +21,7 @@ const SENTIMENT_COLORS = {
 export default function Dashboard() {
   const { data: mentions = [], isLoading } = useMentions();
   const { companyName } = useCompanyName();
-  const { startDate, setStartDate, endDate, setEndDate, filterByDate } = useDateFilter();
+  const { preset, setPreset, customStart, setCustomStart, customEnd, setCustomEnd, filterByDate } = useDateFilter();
 
   const filteredMentions = useMemo(() => filterByDate(mentions), [mentions, filterByDate]);
 
@@ -95,10 +95,12 @@ export default function Dashboard() {
             <p className="text-xs font-mono text-muted-foreground">{companyName} Reddit mention analytics</p>
           </div>
           <DateRangeFilter
-            startDate={startDate}
-            endDate={endDate}
-            onStartChange={setStartDate}
-            onEndChange={setEndDate}
+            preset={preset}
+            onPresetChange={setPreset}
+            customStart={customStart}
+            customEnd={customEnd}
+            onCustomStartChange={setCustomStart}
+            onCustomEndChange={setCustomEnd}
           />
         </div>
 
