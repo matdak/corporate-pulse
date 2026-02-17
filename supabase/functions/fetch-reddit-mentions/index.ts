@@ -85,7 +85,10 @@ serve(async (req) => {
         const queryLower = searchQuery.toLowerCase();
         const filtered = mentions.filter(m => {
           const text = `${m.title || ""} ${m.content}`.toLowerCase();
-          return text.includes(queryLower);
+          if (!text.includes(queryLower)) return false;
+          if (m.author === "[deleted]" || m.author === "[removed]") return false;
+          if (m.content === "[deleted]" || m.content === "[removed]") return false;
+          return true;
         });
         console.log(`r/${sub.name}: ${mentions.length} total -> ${filtered.length} matching "${searchQuery}"`);
 
