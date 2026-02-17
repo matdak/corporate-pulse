@@ -1,66 +1,39 @@
 
+## Fix: Timeline Chart X-Axis Shows Wrong Date Range
 
-# Switch Reddit Data Fetching to Steel Scraping
+### Problem
+The "Mentions Over Time" chart always shows data from January 2000 to today because the timeline computation has a redundant date calculation that only handles 3 of the 8 presets (`7d`, `30d`, `90d`). The default preset is `2y`, which falls through to the fallback `new Date(2000, 0, 1)`.
 
-## Why
-Reddit's public API access takes 7+ days to approve and may be denied. Steel (your buddies' headless browser API) provides a `/v1/scrape` REST endpoint that can extract page content from any URL -- including Reddit search pages -- without needing API credentials from Reddit.
+### Root Cause
+Lines 39-47 in `Index.tsx` re-derive `startDate`/`endDate` inside `timelineData` instead of using the ones already provided by the `useDateFilter` hook (which are already destructured on line 24). The inner `presetMap` is incomplete, missing `6m`, `1y`, `2y`, and `all`.
 
-## Approach
-Replace the Reddit API calls in the `fetch-reddit-mentions` edge function with Steel's simple REST scrape API. Steel will render Reddit search pages and return the HTML, which we then parse to extract posts and comments.
+### Fix (single file change)
+**File: `src/pages/Index.tsx`**
 
-### How Steel Works
-Steel exposes a straightforward REST endpoint:
+Remove the redundant inner date computation (the entire IIFE on lines 39-47) and use the `startDate` and `endDate` already returned by `useDateFilter()` on line 24. The rest of the bucketing logic stays the same.
+
+Before:
+```typescript
+const timelineData = useMemo(() => {
+    const { startDate, endDate } = (() => {
+      if (preset === "custom") return { startDate: customStart, endDate: customEnd };
+      const now = new Date();
+      const presetMap: Record<string, Date> = {
+        "7d": subDays(now, 7), "30d": subDays(now, 30), "90d": subDays(now, 90),
+      };
+      return { startDate: presetMap[preset] || new Date(2000, 0, 1), endDate: now };
+    })();
+    // ... bucketing logic
+  }, [filteredMentions, preset, customStart, customEnd]);
 ```
-POST https://api.steel.dev/v1/scrape
-Headers: { "steel-api-key": "YOUR_KEY", "Content-Type": "application/json" }
-Body: { "url": "https://www.reddit.com/r/jobs/search/?q=Corporate&sort=new", "delay": 2000 }
+
+After:
+```typescript
+const timelineData = useMemo(() => {
+    // Use startDate/endDate from useDateFilter directly
+    const days = differenceInDays(endDate, startDate);
+    // ... same bucketing logic continues
+  }, [filteredMentions, startDate, endDate]);
 ```
-It returns rendered HTML content which we parse server-side.
 
-## What Changes
-
-### 1. Add Steel API Key as a secret
-- You'll need to provide your `STEEL_API_KEY` (from steel.dev dashboard)
-
-### 2. Rewrite `fetch-reddit-mentions` edge function
-- Remove all Reddit OAuth token logic (client ID/secret no longer needed)
-- For each monitored subreddit, use Steel to scrape `reddit.com/r/{sub}/search?q={companyName}&sort=new`
-- Parse the returned HTML to extract post/comment data (title, author, subreddit, permalink, score, content, timestamp)
-- Reddit's search results page renders posts with predictable HTML structure that we can parse with regex or DOM parsing
-- Keep the existing deduplication and sentiment trigger logic unchanged
-
-### 3. Fallback strategy
-- Use Reddit's old.reddit.com interface for scraping (simpler, more consistent HTML structure)
-- Also scrape Reddit's JSON endpoints as a first attempt: `old.reddit.com/r/{sub}/search.json?q={query}&sort=new` -- Reddit exposes public JSON without authentication on old.reddit.com
-- If JSON works, skip HTML parsing entirely; if blocked, fall back to Steel HTML scraping
-
-### 4. No frontend changes needed
-- The data schema stays the same
-- Dashboard, mentions list, and settings all work as-is
-
-## Technical Details
-
-### Edge function changes (`supabase/functions/fetch-reddit-mentions/index.ts`)
-
-**Remove:**
-- `REDDIT_CLIENT_ID` / `REDDIT_CLIENT_SECRET` env vars
-- Reddit OAuth token flow
-- Reddit API calls
-
-**Add:**
-- `STEEL_API_KEY` env var
-- Primary path: try Reddit's public JSON endpoint (`old.reddit.com/r/{sub}/search.json?q={query}&sort=new&limit=100`) with a standard User-Agent via Steel scrape
-- Fallback path: if JSON is blocked, scrape the HTML page via Steel and parse results
-- Parse each result into the same `reddit_mentions` shape (reddit_id, type, title, content, author, subreddit, permalink, score, created_utc)
-
-### Scraping flow per subreddit:
-1. Call Steel `/v1/scrape` with URL `https://old.reddit.com/r/{sub}/search.json?q={query}&sort=new&limit=100`
-2. Steel returns the page content -- since it's a `.json` URL, the content will be the raw JSON
-3. Parse the JSON the same way we currently parse Reddit API responses (same `data.children` structure)
-4. If this fails or gets rate-limited, fall back to scraping the HTML search page
-5. Upsert results and trigger sentiment analysis (unchanged)
-
-### Rate limiting
-- Add a 2-3 second delay between subreddit scrapes to be respectful
-- Steel handles anti-bot/rendering challenges automatically
-
+This ensures all presets (7d, 30d, 90d, 6m, 1y, 2y, all, custom) produce the correct X-axis range, since `useDateFilter` already handles all of them correctly.
