@@ -6,7 +6,10 @@ import { useMentions, useSubreddits } from "@/hooks/use-mentions";
 import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
-import { ExternalLink, ChevronDown, ChevronRight } from "lucide-react";
+import { ExternalLink, ChevronDown, ChevronRight, Download } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 import { useDateFilter, DateRangeFilter } from "@/components/DateRangeFilter";
 
 export default function Mentions() {
@@ -17,6 +20,34 @@ export default function Mentions() {
   const [search, setSearch] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const { preset, setPreset, customStart, setCustomStart, customEnd, setCustomEnd, filterByDate } = useDateFilter();
+
+  const exportCsv = async () => {
+    toast.info("Exporting...");
+    const { data, error } = await supabase
+      .from("reddit_mentions")
+      .select("*")
+      .order("created_utc", { ascending: false });
+    if (error || !data) {
+      toast.error("Export failed");
+      return;
+    }
+    const headers = ["id","reddit_id","type","title","content","author","subreddit","permalink","score","created_utc","fetched_at","sentiment"];
+    const csvRows = [headers.join(",")];
+    for (const row of data) {
+      csvRows.push(headers.map(h => {
+        const val = (row as any)[h] ?? "";
+        return `"${String(val).replace(/"/g, '""')}"`;
+      }).join(","));
+    }
+    const blob = new Blob([csvRows.join("\n")], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `reddit_mentions_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success(`Exported ${data.length} rows`);
+  };
 
   const filtered = useMemo(() => {
     const dateFiltered = filterByDate(mentions);
@@ -31,9 +62,14 @@ export default function Mentions() {
   return (
     <AppLayout>
       <div className="p-6 space-y-4">
-        <div>
-          <h1 className="text-lg font-mono font-bold tracking-tight">Mentions</h1>
-          <p className="text-xs font-mono text-muted-foreground">{filtered.length} results</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-lg font-mono font-bold tracking-tight">Mentions</h1>
+            <p className="text-xs font-mono text-muted-foreground">{filtered.length} results</p>
+          </div>
+          <Button variant="outline" size="sm" className="text-xs font-mono gap-1.5" onClick={exportCsv}>
+            <Download className="h-3.5 w-3.5" /> Export CSV
+          </Button>
         </div>
 
         {/* Filters */}
