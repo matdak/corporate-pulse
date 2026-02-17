@@ -6,8 +6,13 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-async function searchPullpush(endpoint: string, query: string, subreddit: string, size = 100): Promise<any[]> {
-  const url = `https://api.pullpush.io/reddit/search/${endpoint}/?q=${encodeURIComponent(query)}&subreddit=${encodeURIComponent(subreddit)}&sort=desc&size=${size}`;
+async function searchPullpush(
+  endpoint: string, query: string, subreddit: string,
+  size = 100, before?: number, after?: number
+): Promise<any[]> {
+  let url = `https://api.pullpush.io/reddit/search/${endpoint}/?q=${encodeURIComponent(query)}&subreddit=${encodeURIComponent(subreddit)}&sort=desc&size=${size}`;
+  if (before) url += `&before=${before}`;
+  if (after) url += `&after=${after}`;
   console.log(`PullPush ${endpoint}: ${url}`);
   const res = await fetch(url, {
     headers: { "User-Agent": "SocialListener/1.0" },
@@ -19,6 +24,32 @@ async function searchPullpush(endpoint: string, query: string, subreddit: string
   return data?.data || [];
 }
 
+// Paginate through all results between after and now
+async function fetchAllPaginated(
+  endpoint: string, query: string, subreddit: string, afterEpoch: number
+): Promise<any[]> {
+  const allResults: any[] = [];
+  let before: number | undefined = undefined;
+  const maxPages = 20; // Safety limit
+
+  for (let page = 0; page < maxPages; page++) {
+    const batch = await searchPullpush(endpoint, query, subreddit, 100, before, afterEpoch);
+    if (batch.length === 0) break;
+
+    allResults.push(...batch);
+
+    // Get the oldest item's timestamp for next page
+    const oldestTs = Math.min(...batch.map((d: any) => d.created_utc || 0));
+    if (oldestTs <= afterEpoch) break; // We've gone past our time range
+    before = oldestTs;
+
+    // Small delay between pages
+    await new Promise(r => setTimeout(r, 500));
+  }
+
+  return allResults;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -28,9 +59,11 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     let searchQuery = "Corporate";
+    let fullHistory = false;
     try {
       const body = await req.json();
       if (body?.searchQuery) searchQuery = body.searchQuery;
+      if (body?.fullHistory) fullHistory = body.fullHistory;
     } catch {}
 
     const { data: subs } = await supabase.from("monitored_subreddits").select("name");
@@ -40,6 +73,9 @@ serve(async (req) => {
       });
     }
 
+    // 2 years ago as epoch seconds
+    const twoYearsAgo = Math.floor(Date.now() / 1000) - (2 * 365 * 24 * 60 * 60);
+
     let totalNew = 0;
     const newMentionIds: string[] = [];
 
@@ -48,11 +84,22 @@ serve(async (req) => {
       if (i > 0) await new Promise(r => setTimeout(r, 1500));
 
       try {
-        // Fetch both submissions and comments in parallel
-        const [submissions, comments] = await Promise.all([
-          searchPullpush("submission", searchQuery, sub.name, 100),
-          searchPullpush("comment", searchQuery, sub.name, 100),
-        ]);
+        let submissions: any[];
+        let comments: any[];
+
+        if (fullHistory) {
+          // Paginated fetch for full 2-year history
+          [submissions, comments] = await Promise.all([
+            fetchAllPaginated("submission", searchQuery, sub.name, twoYearsAgo),
+            fetchAllPaginated("comment", searchQuery, sub.name, twoYearsAgo),
+          ]);
+        } else {
+          // Quick fetch - just latest 100
+          [submissions, comments] = await Promise.all([
+            searchPullpush("submission", searchQuery, sub.name, 100),
+            searchPullpush("comment", searchQuery, sub.name, 100),
+          ]);
+        }
 
         console.log(`r/${sub.name}: ${submissions.length} submissions, ${comments.length} comments`);
 
@@ -92,15 +139,18 @@ serve(async (req) => {
         });
         console.log(`r/${sub.name}: ${mentions.length} total -> ${filtered.length} matching "${searchQuery}"`);
 
-        // Batch upsert filtered mentions
-        const { data: inserted } = await supabase
-          .from("reddit_mentions")
-          .upsert(filtered, { onConflict: "reddit_id", ignoreDuplicates: true })
-          .select("id");
+        // Batch upsert in chunks of 200 to avoid payload limits
+        for (let j = 0; j < filtered.length; j += 200) {
+          const chunk = filtered.slice(j, j + 200);
+          const { data: inserted } = await supabase
+            .from("reddit_mentions")
+            .upsert(chunk, { onConflict: "reddit_id", ignoreDuplicates: true })
+            .select("id");
 
-        if (inserted) {
-          totalNew += inserted.length;
-          newMentionIds.push(...inserted.map((r: any) => r.id));
+          if (inserted) {
+            totalNew += inserted.length;
+            newMentionIds.push(...inserted.map((r: any) => r.id));
+          }
         }
       } catch (err) {
         console.error(`Failed for r/${sub.name}:`, err);

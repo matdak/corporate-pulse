@@ -3,10 +3,11 @@ import { format } from "date-fns";
 import { AppLayout } from "@/components/AppLayout";
 import { SentimentBadge } from "@/components/SentimentBadge";
 import { useMentions, useSubreddits } from "@/hooks/use-mentions";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { ExternalLink, ChevronDown, ChevronRight } from "lucide-react";
+import { useDateFilter, DateRangeFilter } from "@/components/DateRangeFilter";
 
 export default function Mentions() {
   const { data: mentions = [], isLoading } = useMentions();
@@ -15,15 +16,17 @@ export default function Mentions() {
   const [subredditFilter, setSubredditFilter] = useState<string>("all");
   const [search, setSearch] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const { startDate, setStartDate, endDate, setEndDate, filterByDate } = useDateFilter();
 
   const filtered = useMemo(() => {
-    return mentions.filter((m) => {
+    const dateFiltered = filterByDate(mentions);
+    return dateFiltered.filter((m) => {
       if (sentimentFilter !== "all" && m.sentiment !== sentimentFilter) return false;
       if (subredditFilter !== "all" && m.subreddit !== subredditFilter) return false;
       if (search && !m.content.toLowerCase().includes(search.toLowerCase())) return false;
       return true;
     });
-  }, [mentions, sentimentFilter, subredditFilter, search]);
+  }, [mentions, sentimentFilter, subredditFilter, search, filterByDate]);
 
   return (
     <AppLayout>
@@ -34,7 +37,7 @@ export default function Mentions() {
         </div>
 
         {/* Filters */}
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 items-center">
           <Input
             placeholder="Search content..."
             value={search}
@@ -63,6 +66,12 @@ export default function Mentions() {
               ))}
             </SelectContent>
           </Select>
+          <DateRangeFilter
+            startDate={startDate}
+            endDate={endDate}
+            onStartChange={setStartDate}
+            onEndChange={setEndDate}
+          />
         </div>
 
         {/* Mentions List */}
