@@ -1,41 +1,66 @@
 
-# Dayforce Reddit Social Listening Tool
 
-## Overview
-A data-dense analytics dashboard that monitors Reddit for mentions of "Dayforce" across configurable subreddits, with AI-powered sentiment analysis, stored history, and detailed stats.
+# Switch Reddit Data Fetching to Steel Scraping
 
-## Backend (Lovable Cloud + Supabase)
+## Why
+Reddit's public API access takes 7+ days to approve and may be denied. Steel (your buddies' headless browser API) provides a `/v1/scrape` REST endpoint that can extract page content from any URL -- including Reddit search pages -- without needing API credentials from Reddit.
 
-### Database
-- **reddit_mentions** table — stores each Reddit comment/post with: content, author, subreddit, permalink, created date, fetched date, and AI sentiment label (positive/negative/neutral)
-- **monitored_subreddits** table — configurable list of subreddits to watch (seeded with r/jobs, r/hcm, r/humanresources)
+## Approach
+Replace the Reddit API calls in the `fetch-reddit-mentions` edge function with Steel's simple REST scrape API. Steel will render Reddit search pages and return the HTML, which we then parse to extract posts and comments.
 
-### Edge Functions
-1. **fetch-reddit-mentions** — Calls the Reddit API to search for "dayforce" mentions in monitored subreddits, deduplicates against already-stored mentions, and saves new ones to the database
-2. **analyze-sentiment** — Uses Lovable AI (Gemini) to classify each new mention's sentiment as positive, negative, or neutral and updates the record
-3. A **weekly cron job** (pg_cron) triggers the fetch + analysis pipeline automatically
+### How Steel Works
+Steel exposes a straightforward REST endpoint:
+```
+POST https://api.steel.dev/v1/scrape
+Headers: { "steel-api-key": "YOUR_KEY", "Content-Type": "application/json" }
+Body: { "url": "https://www.reddit.com/r/jobs/search/?q=Corporate&sort=new", "delay": 2000 }
+```
+It returns rendered HTML content which we parse server-side.
 
-## Frontend Pages
+## What Changes
 
-### 1. Dashboard (Home)
-- **Summary cards**: Total mentions, sentiment breakdown (positive/negative/neutral counts & percentages), mentions this week
-- **Mentions over time chart** (line/area chart) — daily mention count over the last 30/90 days
-- **Mentions per day bar chart** — for the current week
-- **Sentiment distribution** — donut or stacked bar chart
-- **Recent mentions feed** — latest mentions with sentiment badge, subreddit tag, date, and snippet; clicking opens the Reddit permalink in a new tab
+### 1. Add Steel API Key as a secret
+- You'll need to provide your `STEEL_API_KEY` (from steel.dev dashboard)
 
-### 2. Mentions List
-- Filterable table of all stored mentions
-- Filters: sentiment, subreddit, date range
-- Each row shows: snippet, subreddit, sentiment badge, date, and a link icon to open on Reddit
-- Clicking a row expands to show full comment text
+### 2. Rewrite `fetch-reddit-mentions` edge function
+- Remove all Reddit OAuth token logic (client ID/secret no longer needed)
+- For each monitored subreddit, use Steel to scrape `reddit.com/r/{sub}/search?q={companyName}&sort=new`
+- Parse the returned HTML to extract post/comment data (title, author, subreddit, permalink, score, content, timestamp)
+- Reddit's search results page renders posts with predictable HTML structure that we can parse with regex or DOM parsing
+- Keep the existing deduplication and sentiment trigger logic unchanged
 
-### 3. Settings
-- Manage monitored subreddits (add/remove)
-- Trigger a manual fetch (on-demand "Fetch Now" button)
+### 3. Fallback strategy
+- Use Reddit's old.reddit.com interface for scraping (simpler, more consistent HTML structure)
+- Also scrape Reddit's JSON endpoints as a first attempt: `old.reddit.com/r/{sub}/search.json?q={query}&sort=new` -- Reddit exposes public JSON without authentication on old.reddit.com
+- If JSON works, skip HTML parsing entirely; if blocked, fall back to Steel HTML scraping
 
-## Key Details
-- Reddit API credentials will be stored as Supabase secrets
-- Data is persisted — only new mentions are fetched each cycle (deduplication by Reddit post/comment ID)
-- All charts built with Recharts for the data-dense dashboard feel
-- Sentiment analysis via Lovable AI using structured output (tool calling) for reliable classification
+### 4. No frontend changes needed
+- The data schema stays the same
+- Dashboard, mentions list, and settings all work as-is
+
+## Technical Details
+
+### Edge function changes (`supabase/functions/fetch-reddit-mentions/index.ts`)
+
+**Remove:**
+- `REDDIT_CLIENT_ID` / `REDDIT_CLIENT_SECRET` env vars
+- Reddit OAuth token flow
+- Reddit API calls
+
+**Add:**
+- `STEEL_API_KEY` env var
+- Primary path: try Reddit's public JSON endpoint (`old.reddit.com/r/{sub}/search.json?q={query}&sort=new&limit=100`) with a standard User-Agent via Steel scrape
+- Fallback path: if JSON is blocked, scrape the HTML page via Steel and parse results
+- Parse each result into the same `reddit_mentions` shape (reddit_id, type, title, content, author, subreddit, permalink, score, created_utc)
+
+### Scraping flow per subreddit:
+1. Call Steel `/v1/scrape` with URL `https://old.reddit.com/r/{sub}/search.json?q={query}&sort=new&limit=100`
+2. Steel returns the page content -- since it's a `.json` URL, the content will be the raw JSON
+3. Parse the JSON the same way we currently parse Reddit API responses (same `data.children` structure)
+4. If this fails or gets rate-limited, fall back to scraping the HTML search page
+5. Upsert results and trigger sentiment analysis (unchanged)
+
+### Rate limiting
+- Add a 2-3 second delay between subreddit scrapes to be respectful
+- Steel handles anti-bot/rendering challenges automatically
+
