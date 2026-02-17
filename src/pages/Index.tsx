@@ -10,6 +10,7 @@ import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, PieChart as RPieChart, Pie, Cell,
 } from "recharts";
+import { useDateFilter, DateRangeFilter } from "@/components/DateRangeFilter";
 
 const SENTIMENT_COLORS = {
   positive: "hsl(142, 71%, 45%)",
@@ -20,16 +21,19 @@ const SENTIMENT_COLORS = {
 export default function Dashboard() {
   const { data: mentions = [], isLoading } = useMentions();
   const { companyName } = useCompanyName();
+  const { startDate, setStartDate, endDate, setEndDate, filterByDate } = useDateFilter();
+
+  const filteredMentions = useMemo(() => filterByDate(mentions), [mentions, filterByDate]);
 
   const stats = useMemo(() => {
-    const total = mentions.length;
-    const positive = mentions.filter((m) => m.sentiment === "positive").length;
-    const negative = mentions.filter((m) => m.sentiment === "negative").length;
-    const neutral = mentions.filter((m) => m.sentiment === "neutral").length;
+    const total = filteredMentions.length;
+    const positive = filteredMentions.filter((m) => m.sentiment === "positive").length;
+    const negative = filteredMentions.filter((m) => m.sentiment === "negative").length;
+    const neutral = filteredMentions.filter((m) => m.sentiment === "neutral").length;
     const weekAgo = subDays(new Date(), 7);
-    const thisWeek = mentions.filter((m) => isAfter(new Date(m.created_utc), weekAgo)).length;
+    const thisWeek = filteredMentions.filter((m) => isAfter(new Date(m.created_utc), weekAgo)).length;
     return { total, positive, negative, neutral, thisWeek };
-  }, [mentions]);
+  }, [filteredMentions]);
 
   const timelineData = useMemo(() => {
     const days = 30;
@@ -38,12 +42,12 @@ export default function Dashboard() {
       const d = format(subDays(new Date(), i), "MMM dd");
       buckets[d] = 0;
     }
-    mentions.forEach((m) => {
+    filteredMentions.forEach((m) => {
       const key = format(new Date(m.created_utc), "MMM dd");
       if (key in buckets) buckets[key]++;
     });
     return Object.entries(buckets).map(([date, count]) => ({ date, count }));
-  }, [mentions]);
+  }, [filteredMentions]);
 
   const sentimentPie = useMemo(() => [
     { name: "Positive", value: stats.positive, color: SENTIMENT_COLORS.positive },
@@ -59,7 +63,7 @@ export default function Dashboard() {
       buckets[d] = { positive: 0, negative: 0, neutral: 0 };
     }
     const weekAgo = startOfDay(subDays(new Date(), 7));
-    mentions
+    filteredMentions
       .filter((m) => isAfter(new Date(m.created_utc), weekAgo))
       .forEach((m) => {
         const key = format(new Date(m.created_utc), "EEE");
@@ -68,9 +72,9 @@ export default function Dashboard() {
         }
       });
     return Object.entries(buckets).map(([day, counts]) => ({ day, ...counts }));
-  }, [mentions]);
+  }, [filteredMentions]);
 
-  const recentMentions = mentions.slice(0, 8);
+  const recentMentions = filteredMentions.slice(0, 8);
 
   if (isLoading) {
     return (
@@ -85,9 +89,17 @@ export default function Dashboard() {
   return (
     <AppLayout>
       <div className="p-6 space-y-6">
-        <div>
-          <h1 className="text-lg font-mono font-bold tracking-tight">Dashboard</h1>
-          <p className="text-xs font-mono text-muted-foreground">{companyName} Reddit mention analytics</p>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div>
+            <h1 className="text-lg font-mono font-bold tracking-tight">Dashboard</h1>
+            <p className="text-xs font-mono text-muted-foreground">{companyName} Reddit mention analytics</p>
+          </div>
+          <DateRangeFilter
+            startDate={startDate}
+            endDate={endDate}
+            onStartChange={setStartDate}
+            onEndChange={setEndDate}
+          />
         </div>
 
         {/* Summary Cards */}
@@ -101,7 +113,6 @@ export default function Dashboard() {
 
         {/* Charts Row */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-          {/* Mentions over time */}
           <Card className="lg:col-span-2">
             <CardHeader className="pb-2 px-4 pt-4">
               <CardTitle className="text-xs font-mono flex items-center gap-2">
@@ -122,7 +133,6 @@ export default function Dashboard() {
             </CardContent>
           </Card>
 
-          {/* Sentiment Distribution */}
           <Card>
             <CardHeader className="pb-2 px-4 pt-4">
               <CardTitle className="text-xs font-mono flex items-center gap-2">
@@ -180,7 +190,7 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent className="px-4 pb-3">
             {recentMentions.length === 0 ? (
-              <p className="text-xs font-mono text-muted-foreground py-4 text-center">No mentions yet. Trigger a fetch from Settings.</p>
+              <p className="text-xs font-mono text-muted-foreground py-4 text-center">No mentions in selected date range.</p>
             ) : (
               <div className="space-y-2">
                 {recentMentions.map((m) => (
