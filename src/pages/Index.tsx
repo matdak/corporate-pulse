@@ -36,16 +36,6 @@ export default function Dashboard() {
   }, [filteredMentions]);
 
   const timelineData = useMemo(() => {
-    const { startDate, endDate } = (() => {
-      if (preset === "custom") return { startDate: customStart, endDate: customEnd };
-      // Compute from useDateFilter's exposed dates
-      const now = new Date();
-      const presetMap: Record<string, Date> = {
-        "7d": subDays(now, 7), "30d": subDays(now, 30), "90d": subDays(now, 90),
-      };
-      return { startDate: presetMap[preset] || new Date(2000, 0, 1), endDate: now };
-    })();
-
     const days = differenceInDays(endDate, startDate);
     let bucketDates: Date[];
     let fmtKey: string;
@@ -85,7 +75,7 @@ export default function Dashboard() {
     });
 
     return Object.values(buckets).map(({ label, count }) => ({ date: label, count }));
-  }, [filteredMentions, preset, customStart, customEnd]);
+  }, [filteredMentions, startDate, endDate]);
 
   const sentimentPie = useMemo(() => [
     { name: "Positive", value: stats.positive, color: SENTIMENT_COLORS.positive },
