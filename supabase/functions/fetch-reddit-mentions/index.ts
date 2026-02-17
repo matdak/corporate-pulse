@@ -60,17 +60,25 @@ serve(async (req) => {
 
     let searchQuery = "Corporate";
     let fullHistory = false;
+    let subredditNames: string[] | null = null;
     try {
       const body = await req.json();
       if (body?.searchQuery) searchQuery = body.searchQuery;
       if (body?.fullHistory) fullHistory = body.fullHistory;
+      if (body?.subreddits) subredditNames = body.subreddits;
     } catch {}
 
-    const { data: subs } = await supabase.from("monitored_subreddits").select("name");
-    if (!subs || subs.length === 0) {
-      return new Response(JSON.stringify({ message: "No subreddits configured" }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    let subs: { name: string }[];
+    if (subredditNames && subredditNames.length > 0) {
+      subs = subredditNames.map(n => ({ name: n }));
+    } else {
+      const { data } = await supabase.from("monitored_subreddits").select("name");
+      if (!data || data.length === 0) {
+        return new Response(JSON.stringify({ message: "No subreddits configured" }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      subs = data;
     }
 
     // 2 years ago as epoch seconds
@@ -81,24 +89,20 @@ serve(async (req) => {
 
     for (let i = 0; i < subs.length; i++) {
       const sub = subs[i];
-      if (i > 0) await new Promise(r => setTimeout(r, 1500));
+      if (i > 0) await new Promise(r => setTimeout(r, 3000));
 
       try {
         let submissions: any[];
         let comments: any[];
 
         if (fullHistory) {
-          // Paginated fetch for full 2-year history
-          [submissions, comments] = await Promise.all([
-            fetchAllPaginated("submission", searchQuery, sub.name, twoYearsAgo),
-            fetchAllPaginated("comment", searchQuery, sub.name, twoYearsAgo),
-          ]);
+          submissions = await fetchAllPaginated("submission", searchQuery, sub.name, twoYearsAgo);
+          await new Promise(r => setTimeout(r, 1500));
+          comments = await fetchAllPaginated("comment", searchQuery, sub.name, twoYearsAgo);
         } else {
-          // Quick fetch - just latest 100
-          [submissions, comments] = await Promise.all([
-            searchPullpush("submission", searchQuery, sub.name, 100),
-            searchPullpush("comment", searchQuery, sub.name, 100),
-          ]);
+          submissions = await searchPullpush("submission", searchQuery, sub.name, 100);
+          await new Promise(r => setTimeout(r, 1500));
+          comments = await searchPullpush("comment", searchQuery, sub.name, 100);
         }
 
         console.log(`r/${sub.name}: ${submissions.length} submissions, ${comments.length} comments`);
