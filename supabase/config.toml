@@ -1,0 +1,7 @@
+project_id = "lngklacxdnjcoorgawcz"
+
+[functions.fetch-reddit-mentions]
+verify_jwt = false
+
+[functions.analyze-sentiment]
+verify_jwt = false
