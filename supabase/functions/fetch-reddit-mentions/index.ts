@@ -23,6 +23,13 @@ serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseKey);
 
+    // Get search query from request body or default to "Corporate"
+    let searchQuery = "Corporate";
+    try {
+      const body = await req.json();
+      if (body?.searchQuery) searchQuery = body.searchQuery;
+    } catch {}
+
     // Get Reddit access token
     const tokenRes = await fetch("https://www.reddit.com/api/v1/access_token", {
       method: "POST",
@@ -49,8 +56,8 @@ serve(async (req) => {
     const newMentionIds: string[] = [];
 
     for (const sub of subs) {
-      // Search for "dayforce" in each subreddit
-      const searchUrl = `https://oauth.reddit.com/r/${sub.name}/search?q=dayforce&restrict_sr=on&sort=new&limit=100&type=comment,link`;
+      // Search for company name in each subreddit
+      const searchUrl = `https://oauth.reddit.com/r/${sub.name}/search?q=${encodeURIComponent(searchQuery)}&restrict_sr=on&sort=new&limit=100&type=comment,link`;
       const searchRes = await fetch(searchUrl, {
         headers: {
           "Authorization": `Bearer ${accessToken}`,

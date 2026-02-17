@@ -21,7 +21,7 @@ serve(async (req) => {
     }
 
     const supabase = createClient(supabaseUrl, supabaseKey);
-    const { mentionIds } = await req.json();
+    const { mentionIds, companyName = "Corporate" } = await req.json();
 
     if (!mentionIds || mentionIds.length === 0) {
       // If no specific IDs, analyze all unanalyzed mentions
@@ -37,7 +37,7 @@ serve(async (req) => {
         });
       }
 
-      await analyzeBatch(supabase, unanalyzed, lovableApiKey);
+      await analyzeBatch(supabase, unanalyzed, lovableApiKey, companyName);
       return new Response(JSON.stringify({ message: `Analyzed ${unanalyzed.length} mentions` }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -50,7 +50,7 @@ serve(async (req) => {
       .in("id", mentionIds);
 
     if (mentions && mentions.length > 0) {
-      await analyzeBatch(supabase, mentions, lovableApiKey);
+      await analyzeBatch(supabase, mentions, lovableApiKey, companyName);
     }
 
     return new Response(JSON.stringify({ message: `Analyzed ${mentions?.length || 0} mentions` }), {
@@ -67,7 +67,8 @@ serve(async (req) => {
 async function analyzeBatch(
   supabase: any,
   mentions: { id: string; content: string }[],
-  apiKey: string
+  apiKey: string,
+  companyName: string
 ) {
   // Process in batches of 10 to avoid rate limits
   for (let i = 0; i < mentions.length; i += 10) {
@@ -86,11 +87,11 @@ async function analyzeBatch(
             messages: [
               {
                 role: "system",
-                content: "You are a sentiment analysis tool. Classify the sentiment of Reddit comments about the company/product 'Dayforce' (a workforce management / HCM platform by Ceridian)."
+                content: `You are a sentiment analysis tool. Classify the sentiment of Reddit comments about the company/product '${companyName}'.`
               },
               {
                 role: "user",
-                content: `Classify the sentiment of this Reddit comment about Dayforce:\n\n"${mention.content.slice(0, 1000)}"`
+                content: `Classify the sentiment of this Reddit comment about ${companyName}:\n\n"${mention.content.slice(0, 1000)}"`
               }
             ],
             tools: [
@@ -98,14 +99,14 @@ async function analyzeBatch(
                 type: "function",
                 function: {
                   name: "classify_sentiment",
-                  description: "Classify the sentiment of a Reddit comment about Dayforce",
+                  description: `Classify the sentiment of a Reddit comment about ${companyName}`,
                   parameters: {
                     type: "object",
                     properties: {
                       sentiment: {
                         type: "string",
                         enum: ["positive", "negative", "neutral"],
-                        description: "The sentiment of the comment toward Dayforce"
+                        description: `The sentiment of the comment toward ${companyName}`
                       }
                     },
                     required: ["sentiment"],
