@@ -35,7 +35,7 @@ function getPresetRange(preset: Preset): { start: Date; end: Date } {
 }
 
 export function useDateFilter() {
-  const [preset, setPreset] = useState<Preset>("2y");
+  const [preset, setPreset] = useState<Preset>("all");
   const [customStart, setCustomStart] = useState<Date>(subYears(new Date(), 2));
   const [customEnd, setCustomEnd] = useState<Date>(new Date());
 
