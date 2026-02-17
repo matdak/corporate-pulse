@@ -81,10 +81,18 @@ serve(async (req) => {
           })),
         ];
 
-        // Batch upsert all mentions at once
+        // Filter to only keep mentions that specifically mention the search query
+        const queryLower = searchQuery.toLowerCase();
+        const filtered = mentions.filter(m => {
+          const text = `${m.title || ""} ${m.content}`.toLowerCase();
+          return text.includes(queryLower);
+        });
+        console.log(`r/${sub.name}: ${mentions.length} total -> ${filtered.length} matching "${searchQuery}"`);
+
+        // Batch upsert filtered mentions
         const { data: inserted } = await supabase
           .from("reddit_mentions")
-          .upsert(mentions, { onConflict: "reddit_id", ignoreDuplicates: true })
+          .upsert(filtered, { onConflict: "reddit_id", ignoreDuplicates: true })
           .select("id");
 
         if (inserted) {
