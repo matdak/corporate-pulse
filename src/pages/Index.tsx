@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { format, subDays, startOfDay, isAfter } from "date-fns";
+import { format, subDays, startOfDay, isAfter, differenceInDays, differenceInMonths, eachDayOfInterval, eachWeekOfInterval, eachMonthOfInterval } from "date-fns";
 import { useCompanyName } from "@/hooks/use-company-name";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useMentions } from "@/hooks/use-mentions";
@@ -21,7 +21,7 @@ const SENTIMENT_COLORS = {
 export default function Dashboard() {
   const { data: mentions = [], isLoading } = useMentions();
   const { companyName } = useCompanyName();
-  const { preset, setPreset, customStart, setCustomStart, customEnd, setCustomEnd, filterByDate } = useDateFilter();
+  const { preset, setPreset, startDate, endDate, customStart, setCustomStart, customEnd, setCustomEnd, filterByDate } = useDateFilter();
 
   const filteredMentions = useMemo(() => filterByDate(mentions), [mentions, filterByDate]);
 
@@ -36,18 +36,56 @@ export default function Dashboard() {
   }, [filteredMentions]);
 
   const timelineData = useMemo(() => {
-    const days = 30;
-    const buckets: Record<string, number> = {};
-    for (let i = days - 1; i >= 0; i--) {
-      const d = format(subDays(new Date(), i), "MMM dd");
-      buckets[d] = 0;
+    const { startDate, endDate } = (() => {
+      if (preset === "custom") return { startDate: customStart, endDate: customEnd };
+      // Compute from useDateFilter's exposed dates
+      const now = new Date();
+      const presetMap: Record<string, Date> = {
+        "7d": subDays(now, 7), "30d": subDays(now, 30), "90d": subDays(now, 90),
+      };
+      return { startDate: presetMap[preset] || new Date(2000, 0, 1), endDate: now };
+    })();
+
+    const days = differenceInDays(endDate, startDate);
+    let bucketDates: Date[];
+    let fmtKey: string;
+    let fmtLabel: string;
+
+    if (days <= 60) {
+      bucketDates = eachDayOfInterval({ start: startDate, end: endDate });
+      fmtKey = "yyyy-MM-dd";
+      fmtLabel = "MMM dd";
+    } else if (days <= 365) {
+      bucketDates = eachWeekOfInterval({ start: startDate, end: endDate });
+      fmtKey = "yyyy-'W'II";
+      fmtLabel = "MMM dd";
+    } else {
+      bucketDates = eachMonthOfInterval({ start: startDate, end: endDate });
+      fmtKey = "yyyy-MM";
+      fmtLabel = "MMM yyyy";
     }
-    filteredMentions.forEach((m) => {
-      const key = format(new Date(m.created_utc), "MMM dd");
-      if (key in buckets) buckets[key]++;
+
+    const buckets: Record<string, { label: string; count: number }> = {};
+    bucketDates.forEach((d) => {
+      buckets[format(d, fmtKey)] = { label: format(d, fmtLabel), count: 0 };
     });
-    return Object.entries(buckets).map(([date, count]) => ({ date, count }));
-  }, [filteredMentions]);
+
+    filteredMentions.forEach((m) => {
+      const d = new Date(m.created_utc);
+      let key: string;
+      if (days <= 60) key = format(d, fmtKey);
+      else if (days <= 365) {
+        // Find the week bucket
+        const weekStart = eachWeekOfInterval({ start: startDate, end: endDate })
+          .reverse()
+          .find((w) => d >= w);
+        key = weekStart ? format(weekStart, fmtKey) : "";
+      } else key = format(d, fmtKey);
+      if (key in buckets) buckets[key].count++;
+    });
+
+    return Object.values(buckets).map(({ label, count }) => ({ date: label, count }));
+  }, [filteredMentions, preset, customStart, customEnd]);
 
   const sentimentPie = useMemo(() => [
     { name: "Positive", value: stats.positive, color: SENTIMENT_COLORS.positive },
@@ -119,7 +157,7 @@ export default function Dashboard() {
             <CardHeader className="pb-2 px-4 pt-4">
               <CardTitle className="text-xs font-mono flex items-center gap-2">
                 <BarChart3 className="h-3.5 w-3.5 text-muted-foreground" />
-                Mentions Over Time (30d)
+                Mentions Over Time
               </CardTitle>
             </CardHeader>
             <CardContent className="px-2 pb-3">
