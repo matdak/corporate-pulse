@@ -1,6 +1,7 @@
 import { NavLink } from "react-router-dom";
 import { BarChart3, List, Settings, Radio } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useCompanyName } from "@/hooks/use-company-name";
 
 const navItems = [
   { to: "/", label: "Dashboard", icon: BarChart3 },
@@ -9,6 +10,8 @@ const navItems = [
 ];
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
+  const { companyName } = useCompanyName();
+
   return (
     <div className="flex h-screen overflow-hidden">
       <aside className="w-56 flex-shrink-0 bg-sidebar border-r border-sidebar-border flex flex-col">
@@ -16,7 +19,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           <div className="flex items-center gap-2">
             <Radio className="h-5 w-5 text-sidebar-primary" />
             <span className="font-mono text-sm font-bold text-sidebar-foreground tracking-tight">
-              DAYFORCE<span className="text-sidebar-primary">/LISTEN</span>
+              {companyName.toUpperCase()}<span className="text-sidebar-primary">/LISTEN</span>
             </span>
           </div>
         </div>

@@ -7,11 +7,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/hooks/use-toast";
-import { Trash2, Plus, Loader2, Zap } from "lucide-react";
+import { Trash2, Plus, Loader2, Zap, Building2 } from "lucide-react";
+import { useCompanyName } from "@/hooks/use-company-name";
 
 export default function SettingsPage() {
   const { data: subreddits = [], isLoading } = useSubreddits();
   const [newSub, setNewSub] = useState("");
+  const { companyName, setCompanyName } = useCompanyName();
+  const [companyInput, setCompanyInput] = useState(companyName);
   const [fetching, setFetching] = useState(false);
   const queryClient = useQueryClient();
 
@@ -39,7 +42,9 @@ export default function SettingsPage() {
   const triggerFetch = async () => {
     setFetching(true);
     try {
-      const { error } = await supabase.functions.invoke("fetch-reddit-mentions");
+      const { error } = await supabase.functions.invoke("fetch-reddit-mentions", {
+        body: { searchQuery: companyName },
+      });
       if (error) throw error;
       toast({ title: "Fetch complete", description: "New mentions fetched and sentiment analyzed." });
       queryClient.invalidateQueries({ queryKey: ["reddit-mentions"] });
@@ -58,6 +63,45 @@ export default function SettingsPage() {
           <p className="text-xs font-mono text-muted-foreground">Manage subreddits and fetch data</p>
         </div>
 
+        {/* Company Name */}
+        <Card>
+          <CardHeader className="pb-2 px-4 pt-4">
+            <CardTitle className="text-xs font-mono flex items-center gap-2">
+              <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
+              Company Name
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="px-4 pb-4">
+            <p className="text-xs font-mono text-muted-foreground mb-3">
+              The company or product name to search for on Reddit.
+            </p>
+            <div className="flex gap-2">
+              <Input
+                value={companyInput}
+                onChange={(e) => setCompanyInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    setCompanyName(companyInput);
+                    toast({ title: "Updated", description: `Company name set to "${companyInput}"` });
+                  }
+                }}
+                className="h-8 text-xs font-mono flex-1"
+              />
+              <Button
+                size="sm"
+                variant="outline"
+                className="font-mono text-xs h-8"
+                onClick={() => {
+                  setCompanyName(companyInput);
+                  toast({ title: "Updated", description: `Company name set to "${companyInput}"` });
+                }}
+              >
+                Save
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Manual Fetch */}
         <Card>
           <CardHeader className="pb-2 px-4 pt-4">
@@ -65,7 +109,7 @@ export default function SettingsPage() {
           </CardHeader>
           <CardContent className="px-4 pb-4">
             <p className="text-xs font-mono text-muted-foreground mb-3">
-              Trigger an on-demand fetch of new Dayforce mentions from all monitored subreddits.
+              Trigger an on-demand fetch of new {companyName} mentions from all monitored subreddits.
             </p>
             <Button onClick={triggerFetch} disabled={fetching} size="sm" className="font-mono text-xs">
               {fetching ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Zap className="h-3.5 w-3.5 mr-1" />}

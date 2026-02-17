@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { format, subDays, startOfDay, isAfter } from "date-fns";
+import { useCompanyName } from "@/hooks/use-company-name";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useMentions } from "@/hooks/use-mentions";
 import { SentimentBadge } from "@/components/SentimentBadge";
@@ -18,6 +19,7 @@ const SENTIMENT_COLORS = {
 
 export default function Dashboard() {
   const { data: mentions = [], isLoading } = useMentions();
+  const { companyName } = useCompanyName();
 
   const stats = useMemo(() => {
     const total = mentions.length;
@@ -85,7 +87,7 @@ export default function Dashboard() {
       <div className="p-6 space-y-6">
         <div>
           <h1 className="text-lg font-mono font-bold tracking-tight">Dashboard</h1>
-          <p className="text-xs font-mono text-muted-foreground">Dayforce Reddit mention analytics</p>
+          <p className="text-xs font-mono text-muted-foreground">{companyName} Reddit mention analytics</p>
         </div>
 
         {/* Summary Cards */}
